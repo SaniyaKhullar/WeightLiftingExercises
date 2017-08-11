@@ -4,5 +4,5 @@ The goal of your project is to predict the manner in which six participants did 
 
 There is a main repo branch with the Rmd and results for the project.
 
-This is also a gh-pages accessable at https:/TerryScantlebury/github.io 
+This is also a gh-pages accessable at https://TerryScantlebury.github.io 
 
