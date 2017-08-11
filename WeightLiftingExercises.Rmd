@@ -1,0 +1,117 @@
+---
+title: "Model building Exercise -Weight Lifting Data"
+author: "Terry Scantlebury"
+date: "August 4, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Overview  
+
+Six participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. The data was collected from accelerometers on the belt, forearm, arm, and dumbbell of the participants, and complied into datasets with 160 features.  
+
+The goal of this report is to train a model to predict the manner (class) in which they did the exercise. This model will then be used to predict 20 different test cases.  
+
+The report describes, how I built a random forest model, and how I used cross validation. The report also shows, the expected out of sample error, and why I made the choices I did.  
+
+## Load required data  
+
+```{r, loaddata}
+#The training data for this project are available here:
+#https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+#The test data are available here:
+#https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+# The data was downloaded to a local folder
+setwd("~/Coursea/PracticalMachineLearning")
+training <- read.csv("./pml-training.csv")
+testing <- read.csv("./pml-testing.csv")
+
+if(!require(caret)) install.packages('caret'); library(caret)
+
+```
+
+# Cleaning the data.  
+
+The data has a number of derived features (mean, std. etc.), which are based on subsets of rows. These features have an NA value for all but one row in each subset. These will be removed as random forest cannot process features with NA values. There are also several columns with near zero values. The concern here that these predictors may become zero-variance predictors when the data are split into cross-validation/bootstrap sub-samples or that a few samples may have an undue influence on the model. These "near-zero-variance" predictors will be removed. Of the remaining features, only numeric and outcome features will be kept. Cleaning processes will reduce the dataset to 53 features.   
+
+```{r, cleandata, cache= TRUE}
+# near zero value features
+nzv <- nearZeroVar(training, saveMetrics = T)
+# features without NA values
+no_na_cols <- names(training[ , colSums(is.na(training)) == 0])
+# filter the features
+features <- setdiff(no_na_cols,row.names(nzv)[nzv$nzv==T])
+# keep numeric and outcome features only
+features <- features[-c(1:6)]
+```
+
+# Training the model  
+
+Partition the training data into training (75%) and validation (25%) data sets.  The validation set is held out, while a random forest model will be trained. For the random forest, 501 trees are build, using 10-fold cross validation. This 10-fold cross validation will allow for improved (averaging) bias at some increased cost in variance for the predictions. The 501 trees should allow the model to converge with good accuracy. The combination of random forest with cross validation tends to produce robust models with high accuracy, and performs well in the presence of features that are correlated in the training data.  
+
+```{r, TrainModel, cache= TRUE}
+set.seed(3234)
+#Partition the training data into training and validation data sets
+inBuild <- createDataPartition(y=training$classe,p=.75,list=FALSE)
+train_data <- training[inBuild,features]
+validate_data <- training[-inBuild,features]
+# filter the unlabelled test data
+test_data <- testing[,features[-53]]
+# define training control
+train_control <- trainControl(method="cv", number=10)
+# train the model
+set.seed(235)
+rf.model <- train(classe~., data=train_data, 
+                  trControl=train_control, 
+                  method="rf", ntree = 501,
+                  prox = TRUE)
+```
+
+# Model summary
+
+Below are the summary details of the random forest as well as the confusion matrix and out-of-bag error for final model. The final model is the tree with the highest accuracy and the lowest out-of-bag error rate.  
+
+```{r,printModels, cache = TRUE}
+# print the random forest
+print(rf.model)
+# print the final model oob error
+rf.model$finalModel$err.rate[501,1]
+# print the confusion matrix
+confusionMatrix(rf.model)
+```
+
+In the final model, `r rf.model$bestTune$mtry` features were selected. The confusion matrix shows a very high predictive ability with a final accuracy of `r rf.model$results$Accuracy[2]`. The estimated out-of-bag (oob) error is only `r rf.model$finalModel$err.rate[501,1]`.  
+
+# Analysis  
+
+Below are plots of the error rate by the number of trees used in the models as well as a plot of the most important features in the final model.  
+
+```{r, AnalyseResults1, cache= TRUE}
+plot(rf.model$finalModel)
+varImpPlot(rf.model$finalModel)
+```
+
+# Validation
+
+Running the held out validation set through the final model produces the following results.  
+
+```{r, Predict_validated, cache= TRUE}
+pred_val_data <- predict(rf.model,newdata=validate_data)
+confusionMatrix(pred_val_data,validate_data$classe)
+```
+
+The model predicts with an accuracy of 0.9951 with a 95% confidence interval of (0.9927, 0.9969). The error rate (1 - accuracy) on the validation set is 0.0049.  
+
+
+# Prediction on test set  
+
+Below are the predicted results from the unlabelled test set.  
+
+```{r, Predict_Test, cache= TRUE}
+pred_test_data <- predict(rf.model,newdata=test_data)
+pred_test_data
+```
